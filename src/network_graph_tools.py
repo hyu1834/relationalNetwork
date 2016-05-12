@@ -51,8 +51,17 @@ class Network_Graph(object):
 			else:
 				self.visual_style["vertex_color"].append(color)
 
-	def remove_node(self):
-		pass
+	def remove_node(self, _id):
+		self.visual_style["vertex_size"] = self.visual_style["vertex_size"][:_id] + self.visual_style["vertex_size"][_id+1:]
+		self.visual_style["vertex_color"] = self.visual_style["vertex_color"][:_id] + self.visual_style["vertex_color"][_id+1:]
+		
+		self.graph.delete_vertices(_id)
+
+	def remove_nodes(self, _ids):
+		self.visual_style["vertex_size"] = [size for _id, size in enumerate(self.visual_style["vertex_size"]) if not _id in _ids]
+		self.visual_style["vertex_color"] = [color for _id, color in enumerate(self.visual_style["vertex_color"]) if not _id in _ids]
+
+		self.graph.delete_vertices(_ids)
 
 	def add_edge(self, source, dest):
 		self.graph.add_edges([(source, dest)])

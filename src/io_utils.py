@@ -17,16 +17,18 @@ import os
 ## @brief standard usage out stream.
 # @param message - message to output as usage
 # @return None
-def usage(message):
+def usage(message, terminate = False):
 	sys.stderr.write("USAGE: %s\n" %(message))
-	sys.exit(1)
+	if terminate:
+		sys.exit(1)
 
 ## @brief standard error out stream.
 # @param message - message to output as error
 # @return None
-def stderr(message):
+def stderr(message, terminate = False):
 	sys.stderr.write('Error: %s\n'%(message))
-	sys.exit(-1)
+	if terminate:
+		sys.exit(1)
 
 ## @brief function error out stream.
 # error output with location provided
