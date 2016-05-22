@@ -10,7 +10,7 @@ import igraph
 class Network_Graph(object):
 	def __init__(self):
 		# create a graph from igraph
-		self.graph = igraph.Graph()
+		self.graph = igraph.Graph(directed=False)
 
 		# graph style
 		self.visual_style = {}
@@ -23,6 +23,8 @@ class Network_Graph(object):
 		self.visual_style["edge_width"] = 1
 		# self.visual_style["vertex_size"] = 0
 		# self.visual_style["layout"] = "circle"
+		self.visual_style["layout"] = "tree"
+
 		# Don't curve the edges
 		self.visual_style["edge_curved"] = False
 
@@ -39,7 +41,7 @@ class Network_Graph(object):
 		# self.graph.vs["name"].append(vertices_name)
 		self.graph.add_vertex()
 		# set the name of the versity
-		self.graph.vs[self.get_nodes_count()-1]["label"] = vertices_name
+		# self.graph.vs[self.get_nodes_count()-1]["label"] = vertices_name
 		if not "vertex_size" in self.visual_style:
 			self.visual_style["vertex_size"] = [1]
 		else:
@@ -84,3 +86,23 @@ class Network_Graph(object):
 			igraph.plot(self.graph, **self.visual_style)
 		else:
 			igraph.plot(self.graph)
+
+	def edge_betweenness_detection(self):
+		communities = self.graph.community_edge_betweenness(directed=False)
+		clusters = communities.as_clustering()
+
+		# Set edge weights based on communities
+		weights = {v: len(c) for c in clusters for v in c}
+		self.graph.es["weight"] = [weights[e.tuple[0]] + weights[e.tuple[1]] for e in self.graph.es]
+
+
+		if self.visual_style:
+			# finally graph it
+			igraph.plot(self.graph, **self.visual_style)
+		else:
+			igraph.plot(self.graph)
+
+
+
+
+

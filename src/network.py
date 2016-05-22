@@ -10,7 +10,6 @@ import dirent_utils
 import io_utils
 import csv_utils
 
-import data_handler
 import network_graph_tools as ngt
 
 
@@ -31,24 +30,6 @@ class Network(object):
 		for _id in node_ids.values():
 			plot_instance.update_node_size(_id, size = (float(plot_instance.get_node_size(_id))/float(max_page_records))*scale)
 
-	def filter_meaningless_nodes_edges(self, plot_instance, node_ids, edge_list):
-		# filtered out all duplicate edges
-		edge_list = set(edge_list)
-		# list of node to be remove
-		remove_node_list = []
-		# for every id in the node_id
-		for _id in node_ids.values():
-			# if the size is < threshold, then we put it in a remove list
-			node_size = plot_instance.get_node_size(_id)
-			# print(node_size)
-			if node_size < self.min_threshold:
-				# print(_id, node_size)
-				remove_node_list.append(_id)
-				# also take it out from the edge list
-				edge_list = [edge for edge in edge_list if not _id in edge]
-
-		return remove_node_list, edge_list
-
 	def update_network(self, plot_instance, _id, _ids, name, color):
 		# if current record page_id not seem anywhere before
 		if not _id in _ids:
@@ -61,16 +42,98 @@ class Network(object):
 
 		return _ids
 
-	def plot_finalized_network(self, plot_instance, main_ids, sub_ids, edges_list):
-		plot_instance.setup()
-		# scale main_ids
-		self.scale_nodes(plot_instance, main_ids, [])
+	def get_edge_count(self, _id, edges_list):
+		count = 0
+		for edge in edges_list:
+			if _id in edge:
+				count += 1
+		return count
 
-		remove_node_list, edges_list = self.filter_meaningless_nodes_edges(plot_instance, sub_ids, edges_list)
+	# network_outlier_removal:
+	# outlier: remove all nodes that size is less than threshold
+	# 		   by removing node, also remove edges between those nodes.
+	def network_outlier_removal(self, plot_instance, node_ids, edges_list, remove_node_list):
+		# filtered out all duplicate edges
+		edges_list = set(edges_list)
+		# list of node to be remove
+		remove_node_list = []
+		# for every id in the node_id
+		for _id in node_ids.values():
+			if _id in remove_node_list:
+				continue
+			# if the size is < threshold, then we put it in a remove list
+			node_size = plot_instance.get_node_size(_id)
+			# print(node_size)
+			if node_size < self.min_threshold:
+				# print(_id, node_size)
+				remove_node_list.append(_id)
+				# also take it out from the edge list
+				edges_list = [edge for edge in edges_list if not _id in edge]
+
+		return remove_node_list, edges_list
+
+	def network_loner_removal(self, plot_instance, main_ids, sub_ids, edges_list, remove_node_list):
+		# first see which node only contains less than 2 edges
+		for _id in sub_ids.values() + main_ids.values() + sub_ids.values():
+			if _id in remove_node_list:
+				continue
+			edge_count = self.get_edge_count(_id, edges_list)
+			if edge_count < 2:
+				remove_node_list.append(_id)
+				edges_list = [edge for edge in edges_list if not _id in edge]
+
+		return remove_node_list, edges_list
+
+	# algorithm to aggregate the network, so there are fewer nodes to render, provide better network plot
+	# First: combine user nodes of specify post node that does not contains edge to other post node
+	# 		 by creating an aggregated node, size = aggregated nodes. remove all edges between aggrated nodes.
+	def network_aggregation(self, plot_instance, main_ids, sub_ids, edges_list, remove_node_list):
+		aggregated_nodes = []
+		# test_node = 490
+
+		# print(self.get_edge_count(test_node, edges_list), test_node in remove_node_list, test_node in main_ids.values(), test_node in sub_ids.values())
+
+		# first see which node only contains less than 2 edges
+		for _id in sub_ids.values() + main_ids.values() + sub_ids.values() + main_ids.values():
+			if _id in remove_node_list:
+				continue
+			edge_count = self.get_edge_count(_id, edges_list)
+			if edge_count < 2:
+				aggregated_nodes.append(_id)
+				remove_node_list.append(_id)
+				edges_list = [edge for edge in edges_list if not _id in edge]
+
+		# print(self.get_edge_count(test_node, edges_list), test_node in remove_node_list, test_node in main_ids.values(), test_node in sub_ids.values())
+		
+
+		return remove_node_list, edges_list
+
+	# getting the network ready for final rendering.
+	def plot_finalized_network(self, plot_instance, main_ids, sub_ids, edges_list, loner = True):
+		plot_instance.setup(1920, 1080)
+		remove_node_list = []
+		# remove any outlier nodes & edges from main group (page/post)
+		remove_node_list, edges_list = self.network_outlier_removal(plot_instance, main_ids, edges_list, remove_node_list)
+		# remove any outlier nodes & edges from sub group (post/user)
+		remove_node_list, edges_list = self.network_outlier_removal(plot_instance, sub_ids, edges_list, remove_node_list)
+		# remove any outlier nodes & edges from main group (page/post)
+		# remove_node_list, edges_list = self.network_outlier_removal(plot_instance, main_ids, edges_list, remove_node_list)
+		# # remove any outlier nodes & edges from sub group (post/user)
+		# remove_node_list, edges_list = self.network_outlier_removal(plot_instance, sub_ids, edges_list, remove_node_list)
+		# aggregate nodes for both main and sub group
+		if loner:
+			remove_node_list, edges_list = self.network_loner_removal(plot_instance, main_ids, sub_ids, edges_list, remove_node_list)
+		
+		# scale main_ids
+		self.scale_nodes(plot_instance, main_ids, remove_node_list)
 		# scale page nodes size
 		self.scale_nodes(plot_instance, sub_ids, remove_node_list)
+		
 		# add all edges
 		plot_instance.add_edges(edges_list)
+		# output the edge list
+		for src, dst in edges_list:
+			print("%s, %s"%(src, dst))
 		# # scale the post node
 		# self.scale_nodes(plot_instance, _ids)
 		# node remove all useless node
@@ -80,26 +143,27 @@ class Network(object):
 		print("Original network has: %s nodes, final network has: %s nodes"%(original, plot_instance.get_nodes_count()))
 		# plot the graph as png
 		plot_instance.plot_graph()	
+		# plot_instance.edge_betweenness_detection()
 
 		return edges_list
 
 	def comments_network_builder(self, filepaths):
 		if self.page_post:
 			page_post_plot = ngt.Network_Graph()
-			page_post_edge_list = []
+			page_post_edges_list = []
 			page_post_page_id = {}
 			page_post_post_id = {}
 			# page_post
 		
 		if self.page_user:
 			page_user_plot = ngt.Network_Graph()
-			page_user_edge_list = []
+			page_user_edges_list = []
 			page_user_page_id = {}
 			page_user_user_id = {}
 
 		if self.post_user:
 			post_user_plot = ngt.Network_Graph()
-			post_user_edge_list = []
+			post_user_edges_list = []
 			post_user_post_id = {}
 			post_user_user_id = {}
 
@@ -149,7 +213,7 @@ class Network(object):
 					# else:	#else just update the size of the node
 					# 	page_post_plot.update_node_size(page_post_post_id[post_id])
 
-					page_post_edge_list.append((page_post_page_id[page_id], page_post_post_id[post_id]))
+					page_post_edges_list.append((page_post_page_id[page_id], page_post_post_id[post_id]))
 
 				if self.page_user:
 					page_user_page_id = self.update_network(page_user_plot, page_id, page_user_page_id, page_name, "red")
@@ -169,7 +233,7 @@ class Network(object):
 					# else:	#else just update the size of the node
 					# 	page_user_plot.update_node_size(page_user_user_id[user_id])
 
-					page_user_edge_list.append((page_user_page_id[page_id], page_user_user_id[user_id]))
+					page_user_edges_list.append((page_user_page_id[page_id], page_user_user_id[user_id]))
 				
 				if self.post_user:
 					post_user_post_id = self.update_network(post_user_plot, post_id, post_user_post_id, post_id[-4:], "red")
@@ -186,18 +250,18 @@ class Network(object):
 					# else:	#else just update the size of the node
 					# 	post_user_plot.update_node_size(post_user_user_id[user_id])
 
-					post_user_edge_list.append((post_user_post_id[post_id], post_user_user_id[user_id]))
+					post_user_edges_list.append((post_user_post_id[post_id], post_user_user_id[user_id]))
 
 
 		if self.page_post:
-			page_post_edge_list = self.plot_finalized_network(page_post_plot, page_post_page_id, page_post_post_id, page_post_edge_list)
+			page_post_edges_list = self.plot_finalized_network(page_post_plot, page_post_page_id, page_post_post_id, page_post_edges_list, loner = False)
 			# page_post_plot.setup()
 			# # scale page nodes size
 			# self.scale_nodes(page_post_plot, page_post_page_id)
-			# remove_node_list, page_post_edge_list = self.filter_meaningless_nodes_edges(page_post_plot, page_post_post_id, 
-			# 																			page_post_edge_list)
+			# remove_node_list, page_post_edges_list = self.filter_meaningless_nodes_edges(page_post_plot, page_post_post_id, 
+			# 																			page_post_edges_list)
 			# # add all edges
-			# page_post_plot.add_edges(page_post_edge_list)
+			# page_post_plot.add_edges(page_post_edges_list)
 			# # scale the post node
 			# self.scale_nodes(page_post_plot, page_post_post_id)
 			# # node remove all useless node
@@ -207,15 +271,15 @@ class Network(object):
 			# page_post_plot.plot_graph()	
 
 		if self.page_user:
-			page_user_edge_list = self.plot_finalized_network(page_user_plot, page_user_page_id, page_user_user_id, page_user_edge_list)
+			page_user_edges_list = self.plot_finalized_network(page_user_plot, page_user_page_id, page_user_user_id, page_user_edges_list, loner = False)
 
 			# page_user_plot.setup()
 			# # scale page nodes size
 			# self.scale_nodes(page_user_plot, page_user_page_id)
-			# remove_node_list, page_user_edge_list = self.filter_meaningless_nodes_edges(page_user_plot, page_user_user_id, 
-			# 																			page_user_edge_list)
+			# remove_node_list, page_user_edges_list = self.filter_meaningless_nodes_edges(page_user_plot, page_user_user_id, 
+			# 																			page_user_edges_list)
 			# # add all edges
-			# page_user_plot.add_edges(page_user_edge_list)
+			# page_user_plot.add_edges(page_user_edges_list)
 			# # scale the post node
 			# self.scale_nodes(page_user_plot, page_user_user_id)
 			# # node remove all useless node
@@ -225,15 +289,15 @@ class Network(object):
 			# page_user_plot.plot_graph()	
 		
 		if self.post_user:
-			post_user_edge_list = self.plot_finalized_network(post_user_plot, post_user_post_id, post_user_user_id, post_user_edge_list)
+			post_user_edges_list = self.plot_finalized_network(post_user_plot, post_user_post_id, post_user_user_id, post_user_edges_list)
 
 			# post_user_plot.setup()
 			# # scale page nodes size
 			# self.scale_nodes(post_user_plot, post_user_post_id)
-			# remove_node_list, post_user_edge_list = self.filter_meaningless_nodes_edges(post_user_plot, post_user_user_id, 
-			# 																			post_user_edge_list)
+			# remove_node_list, post_user_edges_list = self.filter_meaningless_nodes_edges(post_user_plot, post_user_user_id, 
+			# 																			post_user_edges_list)
 			# # add all edges
-			# post_user_plot.add_edges(post_user_edge_list)
+			# post_user_plot.add_edges(post_user_edges_list)
 			# # scale the post node
 			# self.scale_nodes(post_user_plot, post_user_user_id)
 			# # node remove all useless node
@@ -247,19 +311,19 @@ class Network(object):
 	def like_network_builder(self, filepaths):
 		if self.page_post:
 			page_post_plot = ngt.Network_Graph()
-			page_post_edge_list = []
+			page_post_edges_list = []
 			page_post_page_id = {}
 			page_post_post_id = {}
 		
 		if self.page_user:
 			page_user_plot = ngt.Network_Graph()
-			page_user_edge_list = []
+			page_user_edges_list = []
 			page_user_page_id = {}
 			page_user_user_id = {}
 
 		if self.post_user:
 			post_user_plot = ngt.Network_Graph()
-			post_user_edge_list = []
+			post_user_edges_list = []
 			post_user_post_id = {}
 			post_user_user_id = {}
 
@@ -290,44 +354,44 @@ class Network(object):
 					# try to add the node
 					page_post_page_id = self.update_network(page_post_plot, page_id, page_post_page_id, page_id[-4:], "red")
 					page_post_post_id = self.update_network(page_post_plot, post_id, page_post_post_id, page_id[-2:], "purple")
-					page_post_edge_list.append((page_post_page_id[page_id], page_post_post_id[post_id]))
+					page_post_edges_list.append((page_post_page_id[page_id], page_post_post_id[post_id]))
 
 				if self.page_user:
 					page_user_page_id = self.update_network(page_user_plot, page_id, page_user_page_id, page_name, "red")
 					page_user_user_id = self.update_network(page_user_plot, user_id, page_user_user_id, user_id[-4:], "purple")
-					page_user_edge_list.append((page_user_page_id[page_id], page_user_user_id[user_id]))
+					page_user_edges_list.append((page_user_page_id[page_id], page_user_user_id[user_id]))
 				
 				if self.post_user:
 					post_user_post_id = self.update_network(post_user_plot, post_id, post_user_post_id, post_id[-4:], "red")
 					post_user_user_id = self.update_network(post_user_plot, user_id, post_user_user_id, user_id[-2:], "purple")
-					post_user_edge_list.append((post_user_post_id[post_id], post_user_user_id[user_id]))
+					post_user_edges_list.append((post_user_post_id[post_id], post_user_user_id[user_id]))
 
 
 		if self.page_post:
-			page_post_edge_list = self.plot_finalized_network(page_post_plot, page_post_page_id, page_post_post_id, page_post_edge_list)
+			page_post_edges_list = self.plot_finalized_network(page_post_plot, page_post_page_id, page_post_post_id, page_post_edges_list, aggregated = False)
 
 		if self.page_user:
-			page_user_edge_list = self.plot_finalized_network(page_user_plot, page_user_page_id, page_user_user_id, page_user_edge_list)
+			page_user_edges_list = self.plot_finalized_network(page_user_plot, page_user_page_id, page_user_user_id, page_user_edges_list)
 		
 		if self.post_user:
-			post_user_edge_list = self.plot_finalized_network(post_user_plot, post_user_post_id, post_user_user_id, post_user_edge_list)
+			post_user_edges_list = self.plot_finalized_network(post_user_plot, post_user_post_id, post_user_user_id, post_user_edges_list)
 
 	def page_category_network_builder(self, page_names, page_data, size):
 		if self.page_post:
 			page_post_plot = ngt.Network_Graph()
-			page_post_edge_list = []
+			page_post_edges_list = []
 			page_post_page_id = {}
 			page_post_post_id = {}
 		
 		if self.page_user:
 			page_user_plot = ngt.Network_Graph()
-			page_user_edge_list = []
+			page_user_edges_list = []
 			page_user_page_id = {}
 			page_user_user_id = {}
 
 		if self.post_user:
 			post_user_plot = ngt.Network_Graph()
-			post_user_edge_list = []
+			post_user_edges_list = []
 			post_user_post_id = {}
 			post_user_user_id = {}
 
@@ -362,21 +426,21 @@ class Network(object):
 		if self.page_post:
 			page_post_plot.setup()
 			# add all edges
-			page_post_plot.add_edges(list(set(page_post_edge_list)))
+			page_post_plot.add_edges(list(set(page_post_edges_list)))
 			# plot the graph as png
 			page_post_plot.plot_graph()	
 
 		if self.page_user:
 			page_user_plot.setup()
 			# add all edges
-			page_user_plot.add_edges(list(set(page_user_edge_list)))
+			page_user_plot.add_edges(list(set(page_user_edges_list)))
 			# plot the graph as png
 			page_user_plot.plot_graph()	
 		
 		if self.post_user:
 			post_user_plot.setup()
 			# add all edges
-			post_user_plot.add_edges(list(set(post_user_edge_list)))
+			post_user_plot.add_edges(list(set(post_user_edges_list)))
 			# plot the graph as png
 			post_user_plot.plot_graph()	
 

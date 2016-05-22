@@ -10,7 +10,6 @@ import thread
 import dirent_utils
 import io_utils
 
-import data_handler
 import network
 
 
