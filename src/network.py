@@ -136,7 +136,7 @@ class Network(object):
 		plot_instance.remove_nodes(set(remove_node_list))
 		print("Original network has: %s nodes, final network has: %s nodes"%(original, plot_instance.get_nodes_count()))
 		# # plot the graph as png
-		# plot_instance.plot_graph()	
+		plot_instance.plot_graph()	
 		# # plot_instance.edge_betweenness_detection()
 
 		return edges_list
