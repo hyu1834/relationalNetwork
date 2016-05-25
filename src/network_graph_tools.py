@@ -23,7 +23,7 @@ class Network_Graph(object):
 		self.visual_style["edge_width"] = 1
 		# self.visual_style["vertex_size"] = 0
 		# self.visual_style["layout"] = "circle"
-		self.visual_style["layout"] = "tree"
+		# self.visual_style["layout"] = "tree"
 
 		# Don't curve the edges
 		self.visual_style["edge_curved"] = False
